@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,8 +13,12 @@ type Todo struct {
 	Name string `json:"name"`
 }
 
-type TodoRes struct {
-	Todos []Todo `json:"todos"`
+type CollectionRes[Entity any] struct {
+	Results []Entity `json:"results"`
+}
+
+type ErrorResponse struct {
+	Message string `json:"message"`
 }
 
 type todoHandler struct {
@@ -47,16 +50,8 @@ func (t *todoHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (t *todoHandler) read(w http.ResponseWriter) {
-	res := TodoRes{Todos: t.db.todos}
-	jsonRes, err := json.Marshal(res)
-
-	if err != nil {
-		log.Fatalf("Error marshaling: %s", err)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(jsonRes)
+	res := CollectionRes[Todo]{Results: t.db.todos}
+	sendResponse(w, http.StatusAccepted, res)
 }
 
 func (t *todoHandler) update(w http.ResponseWriter, r *http.Request) {
@@ -66,44 +61,38 @@ func (t *todoHandler) update(w http.ResponseWriter, r *http.Request) {
 	if hasId && path[2] != "" {
 		id, err := strconv.Atoi(path[2])
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			sendResponse(w, http.StatusBadRequest, ErrorResponse{Message: err.Error()})
 			return
 		}
 
 		var updatedTodo Todo
 		errDecode := json.NewDecoder(r.Body).Decode(&updatedTodo)
 		if errDecode != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			sendResponse(w, http.StatusBadRequest, ErrorResponse{Message: errDecode.Error()})
 			return
 		}
 
+		var updatedTodoIndex int
 		isSuccessful := false
 		for i, todo := range t.db.todos {
 			if todo.Id == id {
 				t.db.todos[i].Name = updatedTodo.Name
 				isSuccessful = true
+				updatedTodoIndex = i
 				break
 			}
 		}
 
 		if isSuccessful {
-			res := make(map[string]string)
-			res["message"] = "Status OK"
-			jsonRes, err := json.Marshal(res)
-			if err != nil {
-				log.Fatalf("Error marshaling: %s", err)
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(jsonRes)
+			sendResponse(w, http.StatusOK, t.db.todos[updatedTodoIndex])
 			return
 		}
 
-		http.Error(w, "No matched ID!", http.StatusBadRequest)
+		sendResponse(w, http.StatusBadRequest, ErrorResponse{Message: "No matched ID!"})
 		return
 	}
 
-	fmt.Fprintf(w, "Display path: %s", path)
+	sendResponse(w, http.StatusBadRequest, ErrorResponse{Message: "Missing ID or invalid path"})
 }
 
 func (t *todoHandler) delete(w http.ResponseWriter, r *http.Request) {
@@ -113,32 +102,25 @@ func (t *todoHandler) delete(w http.ResponseWriter, r *http.Request) {
 	if hasId && path[2] != "" {
 		id, err := strconv.Atoi(path[2])
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			sendResponse(w, http.StatusBadRequest, ErrorResponse{Message: err.Error()})
 			return
 		}
 
 		removedId, err := getRemovedId(t.db.todos, id)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			sendResponse(w, http.StatusBadRequest, ErrorResponse{Message: err.Error()})
 			return
 		}
 
 		newTodos := removeAt(t.db.todos, removedId)
 		t.db.todos = newTodos
 
-		res := make(map[string]string)
-		res["message"] = "Status OK"
-		jsonRes, err := json.Marshal(res)
-		if err != nil {
-			log.Fatalf("Error marshaling: %s", err)
-		}
-
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(jsonRes)
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
-	fmt.Fprintf(w, "[DELETE] Display path: %s", path)
+	sendResponse(w, http.StatusBadRequest, ErrorResponse{Message: "Missing ID or invalid path"})
 }
 
 func (t *todoHandler) create(w http.ResponseWriter, r *http.Request) {
@@ -146,21 +128,12 @@ func (t *todoHandler) create(w http.ResponseWriter, r *http.Request) {
 
 	err := json.NewDecoder(r.Body).Decode(&todo)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		sendResponse(w, http.StatusBadRequest, ErrorResponse{Message: err.Error()})
 		return
 	}
 
 	t.db.todos = append(t.db.todos, todo)
-
-	res := make(map[string]string)
-	res["message"] = "Status OK"
-	jsonRes, err := json.Marshal(res)
-	if err != nil {
-		log.Fatalf("Error marshaling: %s", err)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(jsonRes)
+	sendResponse(w, http.StatusOK, todo)
 }
 
 func getRemovedId(s []Todo, id int) (int, error) {
@@ -177,4 +150,17 @@ func removeAt[T any](s []T, i int) []T {
 	lastIndex := len(s) - 1
 	s[i] = s[lastIndex]
 	return s[:lastIndex]
+}
+
+func sendResponse(w http.ResponseWriter, statusCode int, response any) {
+	jsonRes, err := json.Marshal(response)
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	w.Write(jsonRes)
 }
