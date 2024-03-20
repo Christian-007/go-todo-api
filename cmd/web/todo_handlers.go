@@ -6,12 +6,19 @@ import (
 	"net/http"
 	"strings"
 
+	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"github.com/google/uuid"
 )
 
 type Todo struct {
 	Id   string `json:"id"`
 	Name string `json:"name"`
+}
+
+func (t Todo) Validate() error {
+	return validation.ValidateStruct(&t,
+		validation.Field(&t.Name, validation.Required, validation.Length(2, 200)),
+	)
 }
 
 type CollectionRes[Entity any] struct {
@@ -61,9 +68,14 @@ func (t *todoHandler) update(w http.ResponseWriter, r *http.Request) {
 
 	if hasId && path[2] != "" {
 		var updatedTodo Todo
-		errDecode := json.NewDecoder(r.Body).Decode(&updatedTodo)
-		if errDecode != nil {
-			sendResponse(w, http.StatusBadRequest, ErrorResponse{Message: errDecode.Error()})
+		decodeErr := json.NewDecoder(r.Body).Decode(&updatedTodo)
+		if decodeErr != nil {
+			sendResponse(w, http.StatusBadRequest, ErrorResponse{Message: decodeErr.Error()})
+			return
+		}
+
+		if validationErr := updatedTodo.Validate(); validationErr != nil {
+			sendResponse(w, http.StatusBadRequest, ErrorResponse{Message: validationErr.Error()})
 			return
 		}
 
@@ -120,6 +132,11 @@ func (t *todoHandler) create(w http.ResponseWriter, r *http.Request) {
 	err := json.NewDecoder(r.Body).Decode(&todo)
 	if err != nil {
 		sendResponse(w, http.StatusBadRequest, ErrorResponse{Message: err.Error()})
+		return
+	}
+
+	if validationErr := todo.Validate(); validationErr != nil {
+		sendResponse(w, http.StatusBadRequest, ErrorResponse{Message: validationErr.Error()})
 		return
 	}
 
