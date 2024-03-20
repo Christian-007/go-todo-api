@@ -40,7 +40,7 @@ func (t *todoHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method == http.MethodGet {
-		t.read(w)
+		t.read(w, r)
 		return
 	}
 
@@ -57,7 +57,35 @@ func (t *todoHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 }
 
-func (t *todoHandler) read(w http.ResponseWriter) {
+func (t *todoHandler) read(w http.ResponseWriter, r *http.Request) {
+	path := strings.Split(r.URL.Path, "/")
+	hasId := len(path) > 2
+
+	if hasId {
+		id := path[2]
+		t.readOne(w, id)
+		return
+	}
+
+	t.readAll(w)
+}
+
+func (t *todoHandler) readOne(w http.ResponseWriter, todoId string) {
+	if todoId == "" {
+		sendResponse(w, http.StatusBadRequest, ErrorResponse{Message: "Missing ID or invalid path"})
+		return
+	}
+
+	selectedIndex, err := getRemovedId(t.db.todos, todoId)
+	if err != nil {
+		sendResponse(w, http.StatusBadRequest, ErrorResponse{Message: err.Error()})
+		return
+	}
+
+	sendResponse(w, http.StatusAccepted, t.db.todos[selectedIndex])
+}
+
+func (t *todoHandler) readAll(w http.ResponseWriter) {
 	res := CollectionRes[Todo]{Results: t.db.todos}
 	sendResponse(w, http.StatusAccepted, res)
 }
