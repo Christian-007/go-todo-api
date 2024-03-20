@@ -4,12 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 type Todo struct {
-	Id   int    `json:"id"`
+	Id   string `json:"id"`
 	Name string `json:"name"`
 }
 
@@ -59,12 +60,6 @@ func (t *todoHandler) update(w http.ResponseWriter, r *http.Request) {
 	hasId := len(path) > 2
 
 	if hasId && path[2] != "" {
-		id, err := strconv.Atoi(path[2])
-		if err != nil {
-			sendResponse(w, http.StatusBadRequest, ErrorResponse{Message: err.Error()})
-			return
-		}
-
 		var updatedTodo Todo
 		errDecode := json.NewDecoder(r.Body).Decode(&updatedTodo)
 		if errDecode != nil {
@@ -72,6 +67,7 @@ func (t *todoHandler) update(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		id := path[2]
 		var updatedTodoIndex int
 		isSuccessful := false
 		for i, todo := range t.db.todos {
@@ -100,12 +96,7 @@ func (t *todoHandler) delete(w http.ResponseWriter, r *http.Request) {
 	hasId := len(path) > 2
 
 	if hasId && path[2] != "" {
-		id, err := strconv.Atoi(path[2])
-		if err != nil {
-			sendResponse(w, http.StatusBadRequest, ErrorResponse{Message: err.Error()})
-			return
-		}
-
+		id := path[2]
 		removedId, err := getRemovedId(t.db.todos, id)
 		if err != nil {
 			sendResponse(w, http.StatusBadRequest, ErrorResponse{Message: err.Error()})
@@ -132,11 +123,12 @@ func (t *todoHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	todo.Id = uuid.New().String()
 	t.db.todos = append(t.db.todos, todo)
 	sendResponse(w, http.StatusOK, todo)
 }
 
-func getRemovedId(s []Todo, id int) (int, error) {
+func getRemovedId(s []Todo, id string) (int, error) {
 	for i, val := range s {
 		if val.Id == id {
 			return i, nil
