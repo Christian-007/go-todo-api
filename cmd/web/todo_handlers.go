@@ -30,7 +30,7 @@ type ErrorResponse struct {
 }
 
 type todoHandler struct {
-	db *InMemory
+	todoRepository *TodoRepository
 }
 
 func (t *todoHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -76,17 +76,19 @@ func (t *todoHandler) readOne(w http.ResponseWriter, todoId string) {
 		return
 	}
 
-	selectedIndex, err := getRemovedId(t.db.todos, todoId)
+	todos := t.todoRepository.FindAll()
+	selectedIndex, err := getRemovedId(todos, todoId)
 	if err != nil {
 		sendResponse(w, http.StatusBadRequest, ErrorResponse{Message: err.Error()})
 		return
 	}
 
-	sendResponse(w, http.StatusAccepted, t.db.todos[selectedIndex])
+	sendResponse(w, http.StatusAccepted, todos[selectedIndex])
 }
 
 func (t *todoHandler) readAll(w http.ResponseWriter) {
-	res := CollectionRes[Todo]{Results: t.db.todos}
+	todos := t.todoRepository.FindAll()
+	res := CollectionRes[Todo]{Results: todos}
 	sendResponse(w, http.StatusAccepted, res)
 }
 
@@ -110,9 +112,12 @@ func (t *todoHandler) update(w http.ResponseWriter, r *http.Request) {
 		id := path[2]
 		var updatedTodoIndex int
 		isSuccessful := false
-		for i, todo := range t.db.todos {
+		todos := t.todoRepository.FindAll()
+
+		for i, todo := range todos {
 			if todo.Id == id {
-				t.db.todos[i].Name = updatedTodo.Name
+				updatedTodo.Id = id
+				t.todoRepository.UpdateOne(i, updatedTodo)
 				isSuccessful = true
 				updatedTodoIndex = i
 				break
@@ -120,7 +125,7 @@ func (t *todoHandler) update(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if isSuccessful {
-			sendResponse(w, http.StatusOK, t.db.todos[updatedTodoIndex])
+			sendResponse(w, http.StatusOK, todos[updatedTodoIndex])
 			return
 		}
 
@@ -137,14 +142,15 @@ func (t *todoHandler) delete(w http.ResponseWriter, r *http.Request) {
 
 	if hasId && path[2] != "" {
 		id := path[2]
-		removedId, err := getRemovedId(t.db.todos, id)
+		todos := t.todoRepository.FindAll()
+		removedId, err := getRemovedId(todos, id)
 		if err != nil {
 			sendResponse(w, http.StatusBadRequest, ErrorResponse{Message: err.Error()})
 			return
 		}
 
-		newTodos := removeAt(t.db.todos, removedId)
-		t.db.todos = newTodos
+		newTodos := removeAt(todos, removedId)
+		t.todoRepository.UpdateAll(newTodos)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNoContent)
@@ -169,7 +175,7 @@ func (t *todoHandler) create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	todo.Id = uuid.New().String()
-	t.db.todos = append(t.db.todos, todo)
+	t.todoRepository.CreateOne(todo)
 	sendResponse(w, http.StatusOK, todo)
 }
 

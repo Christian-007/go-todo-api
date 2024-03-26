@@ -6,10 +6,10 @@ import (
 )
 
 func main() {
-	inMemory := NewInMemory()
+	todoRepository := NewTodoRepository()
 	mux := http.NewServeMux()
 	todoHandler := &todoHandler{
-		db: inMemory,
+		todoRepository: todoRepository,
 	}
 	mux.Handle("/todos", todoHandler)
 	mux.Handle("/todos/", todoHandler)
